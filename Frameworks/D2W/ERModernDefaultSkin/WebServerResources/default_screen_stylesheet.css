@@ -45,7 +45,7 @@ textarea {
 #MenuHeader {
 	margin-bottom: 20px;
 	background-color: #414b5e;
-	padding-top: 30px;	
+	padding-top: 30px;
 }
 
 .MenuHeaderWrapper {
@@ -295,7 +295,7 @@ ul.Level1Items {
 }
 
 .Nav1Selected a:hover {
-	color:  #333;;
+	color:  #333;
 }
 
 .Nav1 a span,
@@ -352,7 +352,7 @@ ul.Level3Items {
 li.Nav2Selected a,
 li.Nav3Selected a {
 	color: #333;
-	
+
 }
 
 li.Nav2Selected,
@@ -848,7 +848,7 @@ span.ErrorLabel {
 }
 
 .EvenLine {
-	
+
 }
 
 .LftActionCell {
@@ -1112,7 +1112,7 @@ span.ErrorLabel {
 }
 
 .ERMDBatchSize_Separator {
-	
+
 }
 
 /* EDIT RELATIONSHIP COMPONENTS */
@@ -1298,9 +1298,9 @@ div.RtActionCell li {
 }
 
 .ListBlock {
-	-moz-opacity: 0.9 !important; 
-	-webkit-opacity: 0.9 !important; 
-	filter: alpha(opacity=90) !important; 
+	-moz-opacity: 0.9 !important;
+	-webkit-opacity: 0.9 !important;
+	filter: alpha(opacity=90) !important;
 	opacity: 0.9 !important;
 }
 
@@ -1332,11 +1332,11 @@ div.RtActionCell li {
     padding:3px;
     list-style-type: none;
 }
-.auto_complete ul li.selected { 
-    background-color: #e6e9ef; 
+.auto_complete ul li.selected {
+    background-color: #e6e9ef;
 }
-.auto_complete ul strong.highlight { 
-    color: #800; 
+.auto_complete ul strong.highlight {
+    color: #800;
     margin:0;
     padding:0;
 }
@@ -1355,7 +1355,7 @@ div.RtActionCell li {
 	border: 1px solid #aaa;
 	margin-top: 3px;
 	margin-right: 5px;
-	
+
 	-moz-border-radius: 3px;
 	-webkit-border-radius: 3px;
 }
@@ -1386,7 +1386,7 @@ div.RtActionCell li {
 }
 
 .AFUFileObject {
-	
+
 }
 
 .AFUProgressBarWrapper {
@@ -1441,8 +1441,8 @@ div.RtActionCell li {
 .HeaderClear,
 .ObjRowClear {
 	position: relative;
-	padding: 0; 
-	margin:0;  
+	padding: 0;
+	margin:0;
 	clear: both;
 }
 
