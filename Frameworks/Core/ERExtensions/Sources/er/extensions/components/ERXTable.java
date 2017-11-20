@@ -6,8 +6,9 @@
  * included with this distribution in the LICENSE.NPL file.  */
 package er.extensions.components;
 
+import java.util.List;
+
 import com.webobjects.appserver.WOContext;
-import com.webobjects.foundation.NSArray;
 import com.webobjects.woextensions.WOTable;
 
 import er.extensions.eof.ERXConstant;
@@ -19,8 +20,7 @@ import er.extensions.foundation.ERXValueUtilities;
  * ability to specify an array of header images that appear
  * in the header cells of the table. Corrects a bug introduced
  * in WO 5.1 where OutOfBounds exceptions are thrown.
- * <br/>
- * Synopsis:<br/>
+ * <h3>Synopsis:</h3>
  * list=<i>anArray</i>;item=<i>aSettableObject</i>;[col=<i>aSettableNumber</i>;][index=<i>aSettableNumber</i>;][row=<i>aSettableNumber</i>;]
  * [maxColumns=<i>aNumber</i>;][tableBackgroundColor=<i>aString</i>;][border=<i>aNumber</i>;][cellpadding=<i>aNumber</i>;][cellspacing=<i>aNumber</i>;]
  * [rowBackgroundColor=<i>aString</i>;][cellBackgroundColor=<i>aString</i>;][cellAlign=<i>aNumber</i>;][cellVAlign=<i>aNumber</i>;]
@@ -134,10 +134,10 @@ public class ERXTable extends WOTable {
      */
     @Override
     public void pushItem() {
-        NSArray aList = list();
+        List aList = list();
         //int index;
         if (goingVertically()) {
-            int c=aList.count() % maxColumns();
+            int c=aList.size() % maxColumns();
             index = currentRow+rowCount()*currentCol;
             if (c!=0 && currentCol>c) index-=(currentCol-c);
         } else {
@@ -145,7 +145,7 @@ public class ERXTable extends WOTable {
         }
         // WO 5.1 guarding against OOB index
         // WORepetition count=x seems to go to x+1 in 5.1, even though it is not displayed
-        Object item = index < aList.count() ? aList.objectAtIndex(index) :  null;
+        Object item = index < aList.size() ? aList.get(index) :  null;
         setValueForBinding(item, "item");
         if (canSetValueForBinding("row"))
             setValueForBinding(ERXConstant.integerForInt(currentRow), "row");

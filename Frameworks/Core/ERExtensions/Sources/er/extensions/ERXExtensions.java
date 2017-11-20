@@ -15,12 +15,12 @@ import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import org.apache.commons.lang.ObjectUtils;
-import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 
 import com.webobjects.appserver.WOApplication;
@@ -41,6 +41,7 @@ import com.webobjects.eocontrol.EOEnterpriseObject;
 import com.webobjects.eocontrol.EOFetchSpecification;
 import com.webobjects.eocontrol.EOKeyValueQualifier;
 import com.webobjects.eocontrol.EOQualifier;
+import com.webobjects.eocontrol.EOQualifierVariable;
 import com.webobjects.eocontrol.EOSharedEditingContext;
 import com.webobjects.foundation.NSArray;
 import com.webobjects.foundation.NSBundle;
@@ -48,20 +49,24 @@ import com.webobjects.foundation.NSDictionary;
 import com.webobjects.foundation.NSForwardException;
 import com.webobjects.foundation.NSKeyValueCoding;
 import com.webobjects.foundation.NSLog;
+import com.webobjects.foundation.NSMutableArray;
+import com.webobjects.foundation.NSMutableDictionary;
 import com.webobjects.foundation.NSNotification;
 import com.webobjects.foundation.NSNotificationCenter;
 import com.webobjects.foundation.NSSelector;
+import com.webobjects.foundation._NSStringUtilities;
 import com.webobjects.jdbcadaptor.JDBCAdaptorException;
 
 import er.extensions.appserver.ERXApplication;
-import er.extensions.appserver.ERXSession;
 import er.extensions.eof.ERXAdaptorChannelDelegate;
 import er.extensions.eof.ERXConstant;
+import er.extensions.eof.ERXDatabase;
 import er.extensions.eof.ERXDatabaseContext;
 import er.extensions.eof.ERXDatabaseContextDelegate;
 import er.extensions.eof.ERXDatabaseContextMulticastingDelegate;
 import er.extensions.eof.ERXEC;
 import er.extensions.eof.ERXEOAccessUtilities;
+import er.extensions.eof.ERXEnterpriseObjectCache;
 import er.extensions.eof.ERXEntityClassDescription;
 import er.extensions.eof.ERXGenericRecord;
 import er.extensions.eof.ERXModelGroup;
@@ -72,10 +77,8 @@ import er.extensions.eof.qualifiers.ERXFullTextQualifierSupport;
 import er.extensions.eof.qualifiers.ERXPrimaryKeyListQualifier;
 import er.extensions.eof.qualifiers.ERXRegExQualifier;
 import er.extensions.eof.qualifiers.ERXToManyQualifier;
-import er.extensions.formatters.ERXSimpleHTMLFormatter;
 import er.extensions.foundation.ERXArrayUtilities;
 import er.extensions.foundation.ERXConfigurationManager;
-import er.extensions.foundation.ERXFileUtilities;
 import er.extensions.foundation.ERXMutableURL;
 import er.extensions.foundation.ERXPatcher;
 import er.extensions.foundation.ERXProperties;
@@ -285,21 +288,47 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
 		// ERXObjectStoreCoordinatorPool has a static initializer, so just load the class if
 		// the configuration setting exists
         if (ERXRemoteSynchronizer.remoteSynchronizerEnabled() || ERXProperties.booleanForKey("er.extensions.ERXDatabaseContext.activate")) {
-        	String className = ERXProperties.stringForKeyWithDefault("er.extensions.ERXDatabaseContext.className", ERXDatabaseContext.class.getName());
-        	Class c = ERXPatcher.classForName(className);
-        	if(c == null) {
-        		throw new IllegalStateException("er.extensions.ERXDatabaseContext.className not found: " + className);
+        	String dbCtxClassName = ERXProperties.stringForKeyWithDefault("er.extensions.ERXDatabaseContext.className", ERXDatabaseContext.class.getName());
+        	Class dbCtxClass = ERXPatcher.classForName(dbCtxClassName);
+        	if(dbCtxClass == null) {
+        		throw new IllegalStateException("er.extensions.ERXDatabaseContext.className not found: " + dbCtxClassName);
         	}
-        	EODatabaseContext.setContextClassToRegister(c);
+        	EODatabaseContext.setContextClassToRegister(dbCtxClass);
+
+        	String dbClassName = ERXProperties.stringForKeyWithDefault("er.extensions.ERXDatabase.className", ERXDatabase.class.getName());
+        	Class dbClass = ERXPatcher.classForName(dbClassName);
+        	if(dbClass == null) {
+        		throw new IllegalStateException("er.extensions.ERXDatabase.className not found: " + dbClassName);
+        	}
+        	if( ERXDatabase.class.isAssignableFrom( dbClass ) ) {
+        		ERXDatabaseContext.setDatabaseContextClass( dbClass );
+        	} else {
+        		throw new IllegalStateException("er.extensions.ERXDatabase.className is not a subclass of ERXDatabase: " + dbClassName);
+        	}
+        	
+        	int mapCapacity = ERXProperties.intForKey( "er.extensions.ERXDatabase.snapshotCacheMapInitialCapacity" );
+        	if( mapCapacity > 0 ) {
+        		ERXDatabase.setSnapshotCacheMapInitialCapacity( mapCapacity );
+        	}
+        	float mapLoadFactor = ERXProperties.floatForKey( "er.extensions.ERXDatabase.snapshotCacheMapInitialLoadFactor" );
+        	if( mapLoadFactor > 0.0f ) {
+        		ERXDatabase.setSnapshotCacheMapInitialLoadFactor( mapLoadFactor );
+        	}
         }
 		ERXObjectStoreCoordinatorPool.initializeIfNecessary();
     }
-    
+
+    @Override
+    public void didFinishInitialization() {
+        ERXEnterpriseObjectCache.setApplicationDidFinishInitialization(true);
+        super.didFinishInitialization();
+    }
+
     private static Map<String, Support> _qualifierKeys;
     
     public static synchronized void registerSQLSupportForSelector(NSSelector selector, EOQualifierSQLGeneration.Support support) {
         if(_qualifierKeys == null) {
-            _qualifierKeys = new HashMap<String, Support>();
+            _qualifierKeys = new HashMap<>();
             EOQualifierSQLGeneration.Support old = EOQualifierSQLGeneration.Support.supportForClass(EOKeyValueQualifier.class);
             EOQualifierSQLGeneration.Support.setSupportForClass(new KeyValueQualifierSQLGenerationSupport(old), EOKeyValueQualifier.class);
         }
@@ -311,8 +340,17 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
      * that was registered and uses their support instead.
      * You'll use this mainly to bind queryOperators in display groups.
      * @author ak
+     * 
+     * Added SQL generation fix for EOKeyValueQualifiers in an edge case
+     * where the key is a key path (with two or more keys) and the last key
+     * is a derived attribute.  For example, "customer.fullName" where the
+     * last key fullName is defined as: 'firstName || ' ' || lastName.
+     * 
+     * @author Ricardo Parada
      */
     public static class KeyValueQualifierSQLGenerationSupport extends EOQualifierSQLGeneration.Support {
+        
+        public static final String HANDLES_KEY_PATH_WITH_DERIVED_ATTRIBUTE_PROPERTY_NAME = "er.extensions.KeyValueQualifierSQLGenerationSupport.handlesKeyPathWithDerivedAttribute";
         
         private EOQualifierSQLGeneration.Support _old;
         
@@ -335,13 +373,284 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
         
         @Override
         public String sqlStringForSQLExpression(EOQualifier eoqualifier, EOSQLExpression e) {
+        	// Check to see if checking for edge case is enabled
+    		boolean handlesKeyPathWithDerivedAttribute = ERXProperties.booleanForKeyWithDefault(HANDLES_KEY_PATH_WITH_DERIVED_ATTRIBUTE_PROPERTY_NAME, true);
         	try {
+        		if (handlesKeyPathWithDerivedAttribute && isKeyPathWithDerivedAttributeCase(e.entity(), eoqualifier)) {
+        				return sqlStringForSQLExpressionWithKeyPathWithDerivedAttribute(eoqualifier, e);
+        		}
+        		
+        		// Otherwise handle normally
         		return supportForQualifier(eoqualifier).sqlStringForSQLExpression(eoqualifier, e);
         	}
         	catch (JDBCAdaptorException ex) {
         		ERXExtensions._log.error("Failed to generate sql string for qualifier " + eoqualifier + " on entity " + e.entity() + ".");
+        		if (handlesKeyPathWithDerivedAttribute == false && isKeyPathWithDerivedAttributeCase(e.entity(), eoqualifier)) {
+        			ERXExtensions._log.error("Consider setting " + HANDLES_KEY_PATH_WITH_DERIVED_ATTRIBUTE_PROPERTY_NAME + "=true");
+        		}
         		throw ex;
         	}
+        }
+        
+        /**
+         * This method handles an edge case where the key of the qualifier is a key path and
+         * the last key in the key path references a derived attribute. For example, if the
+         * key is "order.customerAge" and customerAge were defined as:
+         * 
+         * <pre><code>(TRUNC(MONTHS_BETWEEN(orderDate,customer.birthDate)/12,0))</code></pre>
+         * 
+         * and the key value qualifier was something like "order.customerAge > 50" then this
+         * method would generate SQL like this:
+         * 
+         * <pre><code>(TRUNC(MONTHS_BETWEEN(T1.ORDER_DATE,T2.BIRTH_DATE)/12,0)) > 50</code></pre>
+         * 
+         * Without this fix EOF ends up throwing an exception.
+         * 
+         * @param eoqualifier An EOKeyValueQualifier with a key that is a key path and the last
+         * component in the key path is a derived attribute.
+         * @param e The EOSQLExpression participating in the SQL generation.
+         * @return The SQL for the eoqualifier.
+         */
+        public String sqlStringForSQLExpressionWithKeyPathWithDerivedAttribute(EOQualifier eoqualifier, EOSQLExpression e) {
+    		// Using the example where the key-value qualifier's key is the key path 
+        	// 'order.customerAge' and its last key 'customerAge' is an attribute defined 
+        	// as '(TRUNC(MONTHS_BETWEEN(orderDate,customer.birthDate)/12,0))'
+        	// then we get the destination attribute, i.e. 'customerAge'.  Then we parse
+        	// the properties referenced by its definition, i.e. 'orderDate'
+        	// and 'customer.birthDate'.
+        	
+        	EOKeyValueQualifier keyValueQualifier = (EOKeyValueQualifier) eoqualifier;
+        	String keyPath = keyValueQualifier.key();
+    		EOAttribute derivedAttribute = destinationAttribute(e.entity(), keyPath);
+    		NSArray<String> propertyKeys = parseDefinitionPropertyKeys(derivedAttribute);
+    		
+    		// Get the keys preceding the derived attribute, for example, if key
+    		// is 'order.customerAge' then the key preceding 'customerAge' would be
+    		// 'order' which will become the prefix.
+    		
+    		NSArray<String> allKeys = NSArray.componentsSeparatedByString(keyPath, ".");
+    		String lastKey = allKeys.lastObject();
+    		NSMutableArray<String> prefixKeys = allKeys.mutableClone();
+    		prefixKeys.removeObject(lastKey);
+    		String prefix = prefixKeys.componentsJoinedByString(".") + ".";
+    		
+    		// Now we prefix every key path referenced by the definition and then
+    		// generate SQL for them.  For example the orderDate property key will
+    		// become order.orderDate and customer.birthDate will become
+    		// order.customer.birthDate.  We then convert it to SQL, i.e. T2.ORDER_DATE
+    		// and replace it in the definition.  The end result is to have SQL that
+    		// looks like this:
+    		//
+    		// (TRUNC(MONTHS_BETWEEN(T1.ORDER_DATE,T2.BIRTH_DATE)/12,0)) > 60.0
+    		//
+    		String sqlDefinition = derivedAttribute.definition();
+    		for (String unPrefixedKey : propertyKeys) {
+    			String prefixedKey = prefix + unPrefixedKey;
+    			String sqlString = e.sqlStringForAttributeNamed(prefixedKey);
+    			sqlDefinition = sqlDefinition.replaceAll(unPrefixedKey, sqlString);
+    		}
+    		
+    		// Up to this point we have generated the SQL for the key by replacing
+    		// it for the SQL for its definition and referenced properties.  Now
+    		// we need to add the SQL for the selector and value in the qualifier.
+    		
+    		// Make sure that we have a value before we proceed.  If the value
+    		// turns out to be an EOQualifierValue which is a place holder for
+    		// a value then we don't have a value and we should throw an exception.
+    		
+    		NSSelector qualifierSelector = keyValueQualifier.selector();
+    		Object qualifierValue = keyValueQualifier.value();
+    		if ((qualifierValue instanceof EOQualifierVariable)) {
+    			throw new IllegalStateException(
+    					"sqlStringForKeyValueQualifier: attempt to generate SQL for " 
+    						+ eoqualifier.getClass().getName() 
+    						+ " " + eoqualifier 
+    						+ " failed because the qualifier variable '$" 
+    						+ ((EOQualifierVariable)qualifierValue).key() 
+    						+ "' is unbound."
+    				);
+    		}
+    		
+    		String keyString = sqlDefinition;
+    		
+    		boolean isLike =
+    				qualifierSelector.equals(EOQualifier.QualifierOperatorLike)
+    					|| qualifierSelector.equals(EOQualifier.QualifierOperatorCaseInsensitiveLike);
+    		
+    		Object value;
+    		if (isLike) {
+    			// Convert the special literal used in like expressions, i.e. * and ?
+    			// into their SQL equivalent % and _
+    			value = e.sqlPatternFromShellPattern((String)qualifierValue);
+    		} else {
+    			value = qualifierValue;
+    		}
+
+    		String qualifierSQL;
+    		if (qualifierSelector.equals(EOQualifier.QualifierOperatorCaseInsensitiveLike)) {
+    			String valueString = sqlStringForAttributeValue(e, derivedAttribute, value);
+    			qualifierSQL = e.sqlStringForCaseInsensitiveLike(valueString, keyString);
+    		} else {
+    			String valueString = sqlStringForAttributeValue(e, derivedAttribute, value);
+    			String operatorString = e.sqlStringForSelector(qualifierSelector, value);
+    			qualifierSQL = _NSStringUtilities.concat(keyString, " ", operatorString, " ", valueString);
+    		}
+    		if (isLike) {
+    			char escapeChar = e.sqlEscapeChar();
+    			if (escapeChar != 0) {
+    				qualifierSQL = _NSStringUtilities.concat(qualifierSQL, " ESCAPE '" + escapeChar + "'");
+    			}
+    		}
+    		
+    		// If debug mode print something like this:
+    		//
+    		// KeyValueQualifierSQLGenerationSupport handled edge case for key-value qualifier with key referencing derived attribute: Order.customerAge
+    		//    Key value qualifier: (order.customerAge > 30)
+    		//    Key path: order.customerAge
+    		//    Attribute customerAge is defined as: TRUNC(MONTHS_BETWEEN(orderDate,customer.birthDate)/12,0)
+    		//    SQL generated: TRUNC(MONTHS_BETWEEN(T1.ORDER_DATE,T2.BIRTH_DATE)/12,0) > ?
+    		// 
+    		if (ERXExtensions._log.isDebugEnabled()) {
+        		ERXExtensions._log.debug(getClass().getSimpleName() 
+        				+ " handled edge case for key-value qualifier with key path"
+        				+ " referencing a derived attribute: " 
+        				+ derivedAttribute.entity().name() 
+        				+ "." 
+        				+ derivedAttribute.name()
+        			);
+        		ERXExtensions._log.debug("   Key value qualifier: "+ keyValueQualifier);
+        		ERXExtensions._log.debug("   Key path: " + keyValueQualifier.key());
+        		ERXExtensions._log.debug("   Attribute " + derivedAttribute.name() + " is defined as: " + derivedAttribute.definition());
+        		ERXExtensions._log.debug("   SQL generated: " + qualifierSQL);
+    		}
+    		
+    		return qualifierSQL;
+    	}
+        
+        /**
+         * Uses the EOSQLExpression provided to get the SQL string for value and
+         * corresponding attribute.
+         * 
+         * @param e The EOSQLExpression to use to generate the SQL
+         * @param att The attribute corresponding to the value passed in
+         * @param value The value to convert to SQL
+         * @return The SQL string for the value
+         */
+        public String sqlStringForAttributeValue(EOSQLExpression e, EOAttribute att, Object value) {
+        	if (value != NSKeyValueCoding.NullValue 
+        			&& (((e.useBindVariables()) && (e.shouldUseBindVariableForAttribute(att))) || (e.mustUseBindVariableForAttribute(att)))) {
+        		
+        		NSMutableDictionary<String, Object> binding = e.bindVariableDictionaryForAttribute(att, value);
+        		e.addBindVariableDictionary(binding);
+        		return (String)binding.objectForKey("BindVariablePlaceholder");
+        	}
+        	return e.formatValueForAttribute(value, att);
+        }
+        
+        public static String formatValueForAttribute(EOSQLExpression e, Object value, EOAttribute attribute) {
+        	return e.formatValueForAttribute(value, attribute);
+        }
+
+        /**
+         * Normally EOF can handle key value qualifiers with a key corresponding to a
+         * derived attribute, i.e. fullName attribute defined as firstName || ' ' || lastName.
+         * However, if the key is a key path, i.e. customer.fullName then EOF throws an
+         * exception.  This method checks to see if the key in the eoqualifier is a key
+         * path and the last key in the key path corresponds to a derived attribute.
+         * 
+         * @param entity The entity where the eoqualifier is rooted
+         * @param eoqualifier A qualifier to test
+         * @return true if the eoqualifier is an EOKeyValueQualifier and its key is a
+         * key path (with two or more keys) and the last key references a derived
+         * attribute.
+         */
+        public static boolean isKeyPathWithDerivedAttributeCase(EOEntity entity, EOQualifier eoqualifier) {
+             // Make sure it's a EOKeyValueQualifier as we need to get a key
+            if (!(eoqualifier instanceof EOKeyValueQualifier)) {
+                return false;
+            }
+            
+            EOKeyValueQualifier keyValueQualifier = (EOKeyValueQualifier) eoqualifier;
+            String keyPath = keyValueQualifier.key();
+            
+            // If it's not a key path with at least two keys then it's not
+            // the edge case that we are looking for
+            if (keyPath.contains(".") == false) {
+                return false;
+            }
+            
+            // Traverse the key path to get to last attribute referenced
+            EOAttribute attr = destinationAttribute(entity, keyPath);
+            
+            // If the key path lead to an attribute that is derived then it is
+            // the special case that we checking for.
+            return attr != null && attr.isDerived();
+        }
+        
+        /**
+         * Returns the last attribute referenced by key path.
+         * 
+         * @param rootEntity The entity where the key path begins.
+         * @param keyPath The key path leading to an attribute.
+         * @return The attribute referenced by the last key in the key path.
+         * If the last key in the key path is not an attribute then it returns null.
+         */
+        public static EOAttribute destinationAttribute(EOEntity rootEntity, String keyPath) {
+            // Parse the keys in key path
+            String[] keys = keyPath.split("\\.");
+            
+            // Traverse the key path to get to last attribute referenced
+            EOAttribute attr = null;
+            EOEntity entity = rootEntity;
+            for (String key : keys) {
+                EORelationship relationship = entity.anyRelationshipNamed(key);
+                if (relationship != null) {
+                    entity = relationship.destinationEntity();
+                    attr = null;
+                } else {
+                    attr = entity.anyAttributeNamed(key);
+                }
+            }
+            return attr;
+        }
+
+        /**
+         * Given the definition of a derived attribute belonging to the entity provided
+         * this method parses the definition looking for key paths that represent properties.
+         * For example, a customerAge attribute in a hypothetical Order entity could have a
+         * definition of 'TRUNC(MONTHS_BETWEEN(orderDate,customer.birthDate)/12,0)' and you
+         * can call this method to get an array containing orderDate and customer.birthDate
+         * which are the propertyKeys found in the definition.
+         * 
+         * @param derivedAttribute An EOAttribute with a definition
+         * @return An array with the key paths referenced by the definition of the derived
+         * attribute.
+         */
+        public static NSArray<String> parseDefinitionPropertyKeys(EOAttribute derivedAttribute) {
+        	EOEntity entity = derivedAttribute.entity();
+        	String definition = derivedAttribute.definition();
+        	Pattern p = Pattern.compile("('[^']*')|[,]*+\\b([a-z]+[a-zA-Z0-9_\\.]*)");
+        	Matcher m = p.matcher(definition);
+        	NSMutableArray<String> propertyKeys = new NSMutableArray<>();
+        	while (m.find()) {
+        		// Please note that the regular expression has two groups separated
+        		// with an or, i.e. |. The first group in the regular expression
+        		// matches a single-quoted literal which are to be skipped because
+        		// the text within it are not to be considered properties.
+        		if (m.group(1) != null) {
+        			continue;
+        		}
+        		
+        		// The second group matches key paths preceded optionally with a comma
+        		// as in the customerAge definition example. So get the key path and if
+        		// consider it a property if it references an attribute when applied to
+        		// the entity.
+        		String keyPath = m.group(2);
+        		if (destinationAttribute(entity, keyPath) != null) {
+        			propertyKeys.add(keyPath);
+        		}
+        	}
+        	return propertyKeys.immutableClone();
         }
 
         @Override
@@ -482,13 +791,6 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
    }
 
     /**
-     * @deprecated Please use ERXStringUtilities.removeHTMLTagsFromString(String) directly
-     */
-    public static String removeHTMLTagsFromString(String s) {
-    	return ERXStringUtilities.removeHTMLTagsFromString(s);
-    }
-
-    /**
      * Forces the garbage collector to run. The
      * max loop parameter determines the maximum
      * number of times to run the garbage collector
@@ -497,8 +799,8 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
      * this method with the parameter 1. If called
      * with the parameter 0 the garbage collector
      * will continue to run until no more free memory
-     * is available to collect. <br/>
-     * <br/>
+     * is available to collect.
+     * <p>
      * Note: This can be a very costly operation and
      * should only be used in extreme circumstances.
      * @param maxLoop maximum times to run the garbage
@@ -522,130 +824,13 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
     }
 
     /**
-     * Capitalizes the given string.
-     * @param s string to capitalize
-     * @return capitalized string if the first char is a
-     *		lowercase character.
-     * @deprecated use {@link er.extensions.foundation.ERXStringUtilities#capitalize(String)}
-     */
-    @Deprecated
-    public static String capitalize(String s) {
-        return ERXStringUtilities.capitalize(s);
-    }
-
-    /**
-     * Pluralizes a given string for a given language.
-     * See {@link ERXLocalizer} for more information.
-     * @param s string to pluralize
-     * @param howMany number of its
-     * @param language target language
-     * @return plurified string
-     * @deprecated use {@link er.extensions.localization.ERXLocalizer#localizerForLanguage(String)} then {@link er.extensions.localization.ERXLocalizer#plurifiedString(String, int)}
-     */
-    @Deprecated
-    public static String plurify(String s, int howMany, String language) {
-        return ERXLocalizer.localizerForLanguage(language).plurifiedString(s, howMany);
-    }
-
-    /**
-     * A safe comparison method that first checks to see
-     * if either of the objects are <code>null</code> before comparing
-     * them with the <code>equals</code> method.<br/>
-     * <br/>
-     * Note that if both objects are <code>null</code> then they will
-     * be considered equal.
-     * @param v1 first object
-     * @param v2 second object
-     * @return <code>true</code> if they are equal, <code>false</code> if not
-     * @deprecated use {@link ObjectUtils#equals(Object, Object)} instead
-     */
-    @Deprecated
-    public static boolean safeEquals(Object v1, Object v2) {
-        return v1==v2 || (v1!=null && v2!=null && v1.equals(v2));
-    }
-
-    /**
-     * A safe different comparison method that first checks to see
-     * if either of the objects are <code>null</code> before comparing
-     * them with the <code>equals</code> method.<br/>
-     * <br/>
-     * Note that if both objects are <code>null</code> then they will
-     * be considered equal.
-     * @param v1 first object
-     * @param v2 second object
-     * @return <code>true</code> if they are not equal, <code>false</code> if they are
-     * @deprecated use {@link ObjectUtils#equals(Object, Object)} instead
-     */
-    @Deprecated
-    public static boolean safeDifferent(Object v1, Object v2) {
-        return v1 != v2 && (v1 == null || v2 == null || !v1.equals(v2));
-    }
-
-    /**
-     * Tests if a given string object can be parsed into
-     * an integer.
-     * @param s string to be parsed
-     * @return if the string can be parsed into an int
-     * @deprecated use {@link er.extensions.foundation.ERXStringUtilities#stringIsParseableInteger(String)}
-     */
-    @Deprecated
-    public static boolean stringIsParseableInteger(String s) {
-        try {
-            Integer.parseInt(s);
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-
-    /**
-     * Returns an integer from a parsable string. If the
-     * string can not be parsed then 0 is returned.
-     * @param s string to be parsed.
-     * @return int from the string or 0 if un-parsable.
-     * @deprecated use {@link er.extensions.foundation.ERXValueUtilities#intValue(Object)}
-     */
-    @Deprecated
-    public static int intFromParseableIntegerString(String s) {
-        try {
-            int x = Integer.parseInt(s);
-            return x;
-        } catch (NumberFormatException e) {
-            return 0;
-        }
-    }
-
-    /**
-     * Replaces a given string by another string in a string.
-     * @param s1 string to be replaced
-     * @param s2 to be inserted
-     * @param s string to have the replacement done on it
-     * @return string after having all of the replacement done.
-     * @deprecated use {@link StringUtils#replace(String, String, String)} instead
-     */
-    @Deprecated
-    public static String substituteStringByStringInString(String s1, String s2, String s) {
-        NSArray a=NSArray.componentsSeparatedByString(s,s1);
-        return a!=null ? a.componentsJoinedByString(s2) : s;
-    }
-
-    /**
-     * Method used to retrieve the shared instance of the
-     * html formatter.
-     * @return shared instance of the html formatter
-     * @deprecated use {@link er.extensions.formatters.ERXSimpleHTMLFormatter#formatter()}
-     */
-    @Deprecated
-    public static ERXSimpleHTMLFormatter htmlFormatter() { return ERXSimpleHTMLFormatter.formatter(); }
-
-    /**
      * This method handles 3 different cases
      *
      * 1. keyPath is a single key and represents a relationship
-     *		--> addObjectToBothSidesOfRelationshipWithKey
+     *		--&gt; addObjectToBothSidesOfRelationshipWithKey
      * 2. keyPath is a single key and does NOT represents a relationship
      * 3. keyPath is a real key path: break it up, navigate to the last atom
-     *		--> back to 1. or 2.
+     *		--&gt; back to 1. or 2.
      * @param to enterprise object that is having objects added to it
      * @param from enterprise object that is providing the objects
      * @param keyPath that specifies the relationship on the to object
@@ -671,93 +856,6 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
                 from.takeValueForKeyPath(to,keyPath);
         }
     }
-    
-    /**
-     * Returns the byte array for a given file.
-     * @param f file to get the bytes from
-     * @throws IOException if things go wrong
-     * @return byte array of the file.
-     * @deprecated use {@link er.extensions.foundation.ERXFileUtilities#bytesFromFile(File)}
-     */
-    @Deprecated
-    public static byte[] bytesFromFile(File f) throws IOException {
-        return ERXFileUtilities.bytesFromFile(f);
-    }
-
-    /**
-     * Returns a string from the file using the default
-     * encoding.
-     * @param f file to read
-     * @throws IOException if things go wrong
-     * @return string representation of that file.
-     * @deprecated use {@link er.extensions.foundation.ERXFileUtilities#stringFromFile(File)}
-     */
-    @Deprecated
-    public static String stringFromFile(File f) throws IOException {
-        return ERXFileUtilities.stringFromFile(f);
-    }
-    /**
-     * Returns a string from the file using the specified
-     * encoding.
-     * @param f file to read
-     * @param encoding to be used, null will use the default
-     * @throws IOException if things go wrong
-     * @return string representation of the file.
-     * @deprecated user {@link er.extensions.foundation.ERXFileUtilities#stringFromFile(File, String)}
-     */
-    @Deprecated
-    public static String stringFromFile(File f, String encoding) throws IOException {
-        return ERXFileUtilities.stringFromFile(f, encoding);
-    }
-
-    /**
-     * Determines the last modification date for a given file
-     * in a framework. Note that this method will only test for
-     * the global resource not the localized resources.
-     * @param fileName name of the file
-     * @param frameworkName name of the framework, null or "app"
-     *		for the application bundle
-     * @return the <code>lastModified</code> method of the file object
-     * @deprecated use {@link er.extensions.foundation.ERXFileUtilities#lastModifiedDateForFileInFramework(String, String)}
-     */
-    @Deprecated
-    public static long lastModifiedDateForFileInFramework(String fileName, String frameworkName) {
-        return ERXFileUtilities.lastModifiedDateForFileInFramework(fileName, frameworkName);
-    }
-
-    /**
-     * Reads a file in from the file system and parses it as if it were a property list.
-     * @param fileName name of the file
-     * @param aFrameWorkName name of the framework, null or
-     *		'app' for the application bundle.
-     * @return de-serialized object from the plist formatted file
-     *		specified.
-     * @deprecated use {@link er.extensions.foundation.ERXFileUtilities#readPropertyListFromFileInFramework(String, String)}
-     */
-    @Deprecated
-    public static Object readPropertyListFromFileinFramework(String fileName, String aFrameWorkName) {
-        return ERXFileUtilities.readPropertyListFromFileInFramework(fileName, aFrameWorkName);
-    }
-
-    /**
-     * Reads a file in from the file system for the given set
-     * of languages and parses the file as if it were a property list.
-     * @param fileName name of the file
-     * @param aFrameWorkName name of the framework, null or
-     *		'app' for the application bundle.
-     * @param languageList language list search order
-     * @return de-serialized object from the plist formatted file
-     *		specified.
-     * @deprecated use {@link er.extensions.foundation.ERXFileUtilities#readPropertyListFromFileInFramework(String, String, NSArray)}
-     */
-    @Deprecated
-    public static Object readPropertyListFromFileInFramework(String fileName,
-                                                             String aFrameWorkName,
-                                                             NSArray languageList) {
-        return ERXFileUtilities.readPropertyListFromFileInFramework(fileName,
-                                                             aFrameWorkName,
-                                                             languageList);
-    }
 
     /**
      * For a given enterprise object and key path, will return what
@@ -765,13 +863,13 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
      * last property of the key path's EOAttribute or EORelationship.
      * The userInfo dictionary can be edited via EOModeler, it is that
      * open book looking icon when looking at either an attribute or
-     * relationship.<br/>
-     * <br/>
+     * relationship.
+     * <p>
      * For example if the userInfo dictionary or the attribute 'speed' on the
      * entity Car contained the key-value pair unit=mph, then this method
-     * would be able to resolve that unit given either of these keypaths:<br/>
-     * <code>userInfoUnit(aCar, "speed");<br/>
-     * userInfoUnit(aDrive, "toCar.speed");</code></br>
+     * would be able to resolve that unit given either of these keypaths:
+     * <pre><code>userInfoUnit(aCar, "speed");
+     *userInfoUnit(aDrive, "toCar.speed");</code></pre>
      * Units can be very useful for adding meta information to particular
      * attributes and relationships in models. The ERDirectToWeb framework
      * adds support for displaying units.
@@ -824,7 +922,8 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
      * keys. These keys need to start with the '@@' symbol. For instance
      * if you have the user info value '@unit' off of an attribute for the
      * entity Movie, then you can either pass in a Movie object or a
-     * different object with a prefix key path to a movie object.<br/>
+     * different object with a prefix key path to a movie object.
+     * 
      * @param userInfoUnitString string to be resolved, needs to start with
      *		'@@'. This keypath will be evaluated against either the object
      *		if no prefixKeyPath is specified or the object returned by
@@ -924,37 +1023,30 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
         }
     }
 
-    /** Holds a reference to the random object */
-    // FIXME: Not a thread safe object, access should be synchronized.
-    private static Random _random=new Random();
-
     /**
      * This method can be used with Direct Action URLs to make sure
      * that the browser will reload the page. This is done by
-     * adding the parameter [? | &]r=random_number to the end of the
+     * adding the parameter [? | &amp;]r=random_number to the end of the
      * url.
      * @param daURL a url to add the randomization to.
      * @return url with the addition of the randomization key
      */
     // FIXME: Should check to make sure that the key 'r' isn't already present in the url.
     public static String randomizeDirectActionURL(String daURL) {
-	synchronized(_random) {
-	    int r=_random.nextInt();
+	    int r=ThreadLocalRandom.current().nextInt();
 	    char c=daURL.indexOf('?')==-1 ? '?' : '&';
 	    return  daURL+c+"r="+r;
-	}
     }
     /**
      * This method can be used with Direct Action URLs to make sure
      * that the browser will reload the page. This is done by
-     * adding the parameter [? | &]r=random_number to the end of the
+     * adding the parameter [? | &amp;]r=random_number to the end of the
      * url.
      * @param daURL a url to add the randomization to.
      */
     // FIXME: Should check to make sure that the key 'r' isn't already present in the url.
     public static void addRandomizeDirectActionURL(StringBuffer daURL) {
-	synchronized(_random) {
-	    int r=_random.nextInt();
+	    int r=ThreadLocalRandom.current().nextInt();
 	    char c='?';
 	    for (int i=0; i<daURL.length(); i++) {
 		if (daURL.charAt(i)=='?') {
@@ -964,19 +1056,6 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
 	    daURL.append(c);
 	    daURL.append("r=");
 	    daURL.append(r);
-	}
-    }
-    
-    /**
-     * Adds the session ID for a given session to a given URL. 
-     * @param url URL string to add session ID form value to.
-     * @param session session object
-     * @return URL with the addition of session ID form value
-     * @deprecated use {@link #addSessionIdFormValue(String, WOSession)}
-     */
-    @Deprecated
-    public static String addWosidFormValue(String url, WOSession session) {
-        return addSessionIdFormValue(url, session);
     }
     
     /**
@@ -1006,16 +1085,6 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
 		}
     	
     	return urlString;
-    }
-
-    /**
-     * @deprecated Use {@link er.extensions.foundation.ERXStringUtilities#cleanString}
-     * @param newString 
-     * @param toBeCleaneds 
-     * @return results of ERXStringUtilities.cleanString
-     */
-    public static String cleanString(String newString, NSArray<String> toBeCleaneds) {
-    	return ERXStringUtilities.cleanString(newString, toBeCleaneds);
     }
 
     /**
@@ -1057,27 +1126,6 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
     }
 
     /**
-     * Sets the current session for this thread. This is called
-     * from {@link ERXSession}'s awake and sleep methods.
-     * @param session that is currently active for this thread.
-     * @deprecated use  ERXSession.setSession(session) instead
-     */
-    @Deprecated
-    public synchronized static void setSession(ERXSession session) {
-    	 ERXSession.setSession(session);
-    }
-
-    /**
-     * Returns the current session object for this thread.
-     * @return current session object for this thread
-     * @deprecated use  ERXSession.session() instead
-     */
-    @Deprecated
-    public synchronized static ERXSession session() {
-        return  ERXSession.session();
-    }
-
-    /**
      * Constructs a unique key based on a context.
      * A method used by the preferences mechanism from ERDirectToWeb which
      * needs to be here because it is shared by ERDirectToWeb and ERCoreBusinessLogic.
@@ -1109,7 +1157,9 @@ public class ERXExtensions extends ERXFrameworkPrincipal {
      * Frees all of the resources associated with a given
      * process and then destroys the process.
      * @param p process to destroy
+     * @deprecated use {@link ERXRuntimeUtilities#freeProcessResources(Process)} instead
      */
+    @Deprecated
     public static void freeProcessResources(Process p) {
         if (p!=null) {
             try {

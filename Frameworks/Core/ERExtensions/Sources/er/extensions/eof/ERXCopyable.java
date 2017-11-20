@@ -32,12 +32,12 @@ import er.extensions.foundation.ERXArrayUtilities;
  * There are several ways to implement this interface:
  * <ol>
  * <li>Manually implement the interface in each {@code Entity.java} class that
- * you want to be able to copy</br>This is the quickest way to get started.
+ * you want to be able to copy<br>This is the quickest way to get started.
  * Simply add specify that your EO implements ERXCopyable&lt;MyEntity&gt; in the
  * class declaration, then implement the required methods. Here is what you'll
  * need to add to get started:
  * 
- * <pre>
+ * <pre><code>
  * &#064;Override
  * public MyEntity copy() {
  * 	MyEntity copy = copy(new NSMutableDictionary&lt;EOGlobalID, ERXCopyable&lt;?&gt;&gt;());
@@ -55,18 +55,18 @@ import er.extensions.foundation.ERXArrayUtilities;
  * 	MyEntity duplicate = ERXCopyable.Utility.deepCopy(copiedObjects, (MyEntity) this);
  * 	return duplicate;
  * }
- * </pre>
+ * </code></pre>
  * 
  * </li>
  * <li>Manually implement the interface in a {@link ERXGenericRecord} subclass
- * </br>This is almost as easy as option #1 but has the added advantage of
+ * <br>This is almost as easy as option #1 but has the added advantage of
  * allowing you to implement the interface just once, and then override the
  * default behavior as needed for individual EOs. Simply specify that your
  * {@link ERXGenericRecord} subclass implements
  * ERXCopyable&lt;MyGenericRecord&gt; in the class declaration and then
  * implement the required methods. The defaults are very similar to option #1:
  * 
- * <pre>
+ * <pre><code>
  * &#064;Override
  * public MyGenericRecord copy() {
  * 	MyGenericRecord copy = copy(new NSMutableDictionary&lt;EOGlobalID, ERXCopyable&lt;?&gt;&gt;());
@@ -84,19 +84,19 @@ import er.extensions.foundation.ERXArrayUtilities;
  * 	MyGenericRecord duplicate = ERXCopyable.Utility.deepCopy(copiedObjects, this);
  * 	return duplicate;
  * }
- * </pre>
+ * </code></pre>
  * 
  * </li>
  * <li>Add {@code UserInfo} dictionary entries into your EOModel and make some
  * additions to your EOGenerator templates that will automatically implement
- * this interface based on your model settings.</br>This option is the most
+ * this interface based on your model settings.<br>This option is the most
  * powerful and flexible, and requires the least amount of ongoing programming,
  * but takes more work to get setup. It's well worth it if you are going to be
  * implementing ERXCopyable on more than just a few EOs. Here's what you'll need
- * to do:</li>
+ * to do:
  * <ol>
  * <li>Create or modify your own EOGenerator template with the following
- * additions:</li>
+ * additions:
  * <ul>
  * <li>In the imports section, add the following:
  * 
@@ -111,7 +111,7 @@ import er.extensions.foundation.ERXArrayUtilities;
  * '{') insert the following:
  * 
  * <pre>
- * #if(${entity.userInfo.ERXCopyable}) implements ERXCopyable<${entity.classNameWithOptionalPackage}>#end
+ * #if(${entity.userInfo.ERXCopyable}) implements ERXCopyable&lt;${entity.classNameWithOptionalPackage}&gt;#end
  * </pre>
  * 
  * </li>
@@ -145,6 +145,7 @@ import er.extensions.foundation.ERXArrayUtilities;
  * 
  * </li>
  * </ul>
+ * </li>
  * </ol>
  * </ol>
  * 
@@ -172,6 +173,13 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 	 * @author David Avendasora
 	 */
 	public enum CopyType {
+		
+		/**
+		 * Stored as " {@code ERXCopyable.CopyType = Skip;}" in the
+		 * property's UserInfo dictionary. Skips the value.
+		 * <em>For attributes only.</em>
+		 */
+		SKIP("Skip", new NSArray<Class<? extends EOProperty>>(EOAttribute.class, EORelationship.class)),
 
 		/**
 		 * Stored as " {@code ERXCopyable.CopyType = Nullify;}" in the
@@ -249,7 +257,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *         {@link EOProperty}
 		 */
 		public static NSArray<CopyType> copyTypesFor(EOProperty property) {
-			NSMutableArray<CopyType> validCopyTypes = new NSMutableArray<ERXCopyable.CopyType>();
+			NSMutableArray<CopyType> validCopyTypes = new NSMutableArray<>();
 			for (CopyType copyType : values()) {
 				if (copyType.validPropertyClasses().contains(property.getClass())) {
 					validCopyTypes.add(copyType);
@@ -285,13 +293,10 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 	}
 
 	/**
-	 * <p>
 	 * This class provides a default implementation of ERXCopyable that handles
 	 * the most common situations encountered copying {@link EOEnterpriseObject}
 	 * s.
-	 * </p>
-	 * <p>
-	 * <b>Notes</b>
+	 * <h3>Notes</h3>
 	 * <ul>
 	 * <li>Debugging information can be turned on with the DEBUG level of the
 	 * log4j logger
@@ -305,14 +310,13 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 	 * register the new object before copying its relationships to so that
 	 * circular relationships will be copied correctly. For example:
 	 * 
-	 * <pre>
+	 * <pre><code>
 	 * EOGlobalID globalID = editingContext().globalIDForObject(this);
 	 * copiedObjects.setObjectForKey(copy, globalID);
-	 * </pre>
+	 * </code></pre>
 	 * 
 	 * </li>
 	 * </ul>
-	 * </p>
 	 */
 	public static class DefaultImplementation {
 
@@ -377,7 +381,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 	 * implementations of
 	 * <ul>
 	 * <li>{@link Utility#modelCopy(NSMutableDictionary, ERXCopyable)}</li>
-	 * <li>{@link Utility#referenceCopy(ERXCopyable)}</li>
+	 * <li>{@link Utility#referenceCopy(ERXEnterpriseObject)}</li>
 	 * <li>{@link Utility#shallowCopy(ERXCopyable)}</li>
 	 * <li>{@link Utility#deepCopy(NSMutableDictionary, ERXCopyable)}</li>
 	 * </ul>
@@ -452,7 +456,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the newly instantiated copy of source that needs to have
 		 *            its relationships cleaned
 		 */
-		public static <T extends ERXCopyable<T>> void cleanRelationships(T source, T destination) {
+		public static <T extends ERXEnterpriseObject> void cleanRelationships(T source, T destination) {
 			ERXCopyable.copyLogger.debug("Cleaning related objects in copy of " + source);
 			EOEditingContext editingContext = source.editingContext();
 			EOEntity entity = Utility.entity(source);
@@ -493,7 +497,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 * class property and also used in a relationship it is assumed to be an
 		 * exposed primary- or foreign-key and <em>are not</em> copied. Such
 		 * attributes are set to null. See
-		 * {@link #exposedPKAndFKAttributes(ERXCopyable)} for details on how
+		 * {@link #exposedPKandFKAttributeNames(ERXCopyable)} for details on how
 		 * this is determined. It can be used when creating custom
 		 * implementations of the
 		 * {@link ERXCopyable#duplicate(NSMutableDictionary)} method.
@@ -505,7 +509,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 * @param destination
 		 *            object to copy attribute values to
 		 */
-		public static <T extends ERXCopyable<T>> void copyClassAttributes(T source, T destination) {
+		public static <T extends ERXEnterpriseObject> void copyClassAttributes(T source, T destination) {
 			EOEntity entity = Utility.entity(source);
 			ERXCopyable.copyLogger.debug("Copying all attributes for  " + source.userPresentableDescription());
 			NSArray<EOAttribute> attributes = Utility.classAttributes(entity);
@@ -525,7 +529,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the {@link EOAttribute} that should have its value copied
 		 * @since Feb 10, 2013
 		 */
-		public static <T extends ERXCopyable<T>> void copyAttribute(T source, T destination, EOAttribute attribute) {
+		public static <T extends ERXEnterpriseObject> void copyAttribute(T source, T destination, EOAttribute attribute) {
 			String attributeName = attribute.name();
 			Object sourceValue = source.storedValueForKey(attributeName);
 			NSArray<EOAttribute> exposedPKAndFKAttributes = Utility.exposedPKAndFKAttributes(source);
@@ -619,7 +623,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 			NSArray<EORelationship> classRelationships = Utility._classRelationshipsDictionary.objectForKey(entityName);
 			if (classRelationships == null) {
 				NSArray<EORelationship> allRelationships = entity.relationships();
-				NSMutableArray<EORelationship> relationships = new NSMutableArray<EORelationship>();
+				NSMutableArray<EORelationship> relationships = new NSMutableArray<>();
 				for (EORelationship relationship : allRelationships) {
 					if (entity.classProperties().containsObject(relationship)) {
 						relationships.addObject(relationship);
@@ -763,15 +767,13 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 * relationships. These can be presumed to be exposed primary or foreign
 		 * keys and must be handled differently when copying an object.
 		 * 
-		 * @param <T>
-		 *            the Type of the {@code source} object
 		 * @param source
 		 *            the {@code ERXCopyable} to copy attribute values from
 		 * @return an array of {@link EOAttribute#name()} values from the
 		 *         {@code source}'s {@link EOEntity} that are used in forming
 		 *         {@link EORelationship}s.
 		 **/
-		public static <T extends ERXCopyable<T>> NSArray<String> exposedPKandFKAttributeNames(T source) {
+		public static NSArray<String> exposedPKandFKAttributeNames(ERXEnterpriseObject source) {
 			@SuppressWarnings("unchecked")
 			NSArray<String> attributeNames = (NSArray<String>) exposedPKAndFKAttributes(source).valueForKey("name");
 			return attributeNames;
@@ -826,7 +828,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 			NSArray<EOAttribute> classAttributes = Utility._classAttributesDictionary.objectForKey(entityName);
 			if (classAttributes == null) {
 				NSArray<EOAttribute> allAttributes = entity.attributes();
-				NSMutableArray<EOAttribute> attributes = new NSMutableArray<EOAttribute>();
+				NSMutableArray<EOAttribute> attributes = new NSMutableArray<>();
 				for (EOAttribute attribute : allAttributes) {
 					if (entity.classProperties().containsObject(attribute)) {
 						attributes.addObject(attribute);
@@ -879,7 +881,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the subclass of {@code ERXCopyable} to copy
 		 * @return a new instance of the same Entity as source
 		 */
-		public static <T extends ERXCopyable<T>> T newInstance(T source) {
+		public static <T extends ERXEnterpriseObject> T newInstance(T source) {
 			ERXCopyable.copyLogger.debug("Making new instance of " + source.userPresentableDescription());
 			@SuppressWarnings("unchecked")
 			T destination = (T) EOUtilities.createAndInsertInstance(source.editingContext(), source.entityName());
@@ -916,7 +918,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the subclass of {@code ERXCopyable} to copy
 		 * @return a copy of this object
 		 */
-		public static <T extends ERXCopyable<T>> T shallowCopy(T source) {
+		public static <T extends ERXEnterpriseObject> T shallowCopy(T source) {
 			ERXCopyable.copyLogger.debug("Making shallow copy of " + source);
 			T copy = Utility.newInstance(source);
 			Utility.copyClassAttributes(source, copy);
@@ -939,7 +941,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the subclass of {@code ERXCopyable} to copy attribute
 		 *            values to
 		 */
-		public static <T extends ERXCopyable<T>> void referenceCopyClassRelationships(T source, T destination) {
+		public static <T extends ERXEnterpriseObject> void referenceCopyClassRelationships(T source, T destination) {
 			ERXCopyable.copyLogger.debug("Reference copying relationships for  " + source);
 			EOEntity entity = EOUtilities.entityForObject(source.editingContext(), source);
 			for (EORelationship relationship : classRelationships(entity)) {
@@ -962,7 +964,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the {@link EORelationship} to copy from the {@code source}
 		 *            to the {@code destination}
 		 */
-		public static <T extends ERXCopyable<T>> void referenceCopyRelationship(T source, T destination, EORelationship relationship) {
+		public static <T extends ERXEnterpriseObject> void referenceCopyRelationship(T source, T destination, EORelationship relationship) {
 			if (relationship.isToMany()) {
 				Utility.referenceCopyToManyRelationship(source, destination, relationship);
 			}
@@ -988,7 +990,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the subclass of {@code ERXCopyable} to copy to-one
 		 *            relationships values to
 		 */
-		public static <T extends ERXCopyable<T>> void referenceCopyToOneClassRelationships(T source, T destination) {
+		public static <T extends ERXEnterpriseObject> void referenceCopyToOneClassRelationships(T source, T destination) {
 			ERXCopyable.copyLogger.debug("Reference copying all to-one relationships for  " + source.userPresentableDescription());
 			EOEntity entity = Utility.entity(source);
 			for (EORelationship relationship : classRelationships(entity)) {
@@ -1013,7 +1015,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the {@link EORelationship} to copy from the {@code source}
 		 *            to the {@code destination}
 		 */
-		public static <T extends ERXCopyable<T>, E extends ERXEnterpriseObject> void referenceCopyToOneRelationship(T source, T destination, EORelationship relationship) {
+		public static <T extends ERXEnterpriseObject, E extends ERXEnterpriseObject> void referenceCopyToOneRelationship(T source, T destination, EORelationship relationship) {
 			String relationshipName = relationship.name();
 			@SuppressWarnings("unchecked")
 			E sourceRelatedEO = (E) source.valueForKey(relationshipName);
@@ -1040,7 +1042,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the subclass of {@code ERXCopyable} to copy to-many
 		 *            {@code relationship}'s values to
 		 */
-		public static <T extends ERXCopyable<T>> void referenceCopyToManyClassRelationships(T source, T destination) {
+		public static <T extends ERXEnterpriseObject> void referenceCopyToManyClassRelationships(T source, T destination) {
 			ERXCopyable.copyLogger.debug("Reference copying all to-many relationships for  " + source.userPresentableDescription());
 			EOEntity entity = Utility.entity(source);
 			for (EORelationship relationship : classRelationships(entity)) {
@@ -1066,7 +1068,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            {@code source} to the {@code destination}
 		 * @since Feb 10, 2013
 		 */
-		public static <T extends ERXCopyable<T>, E extends ERXEnterpriseObject> void referenceCopyToManyRelationship(T source, T destination, EORelationship relationship) {
+		public static <T extends ERXEnterpriseObject, E extends ERXEnterpriseObject> void referenceCopyToManyRelationship(T source, T destination, EORelationship relationship) {
 			String relationshipName = relationship.name();
 			@SuppressWarnings("unchecked")
 			NSArray<E> sourceRelatedEOs = (NSArray<E>) source.valueForKey(relationshipName);
@@ -1091,7 +1093,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the {@link EORelationship} to copy from the {@code source}
 		 *            to the {@code destination}
 		 */
-		public static <T extends ERXCopyable<T>> void shallowCopyRelationship(T source, T destination, EORelationship relationship) {
+		public static <T extends ERXEnterpriseObject> void shallowCopyRelationship(T source, T destination, EORelationship relationship) {
 			if (relationship.isToMany()) {
 				Utility.shallowCopyToManyRelationship(source, destination, relationship);
 			}
@@ -1108,8 +1110,6 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 * 
 		 * @param <T>
 		 *            the Type of the {@code source} and {@code destination}
-		 * @param <E>
-		 *            the Type of the objects for the {@code relationship}
 		 * @param source
 		 *            the subclass of {@code ERXCopyable} to copy the
 		 *            {@code relationship}'s value(s) from
@@ -1121,14 +1121,14 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            {@code source} to the {@code destination}
 		 * @since Feb 10, 2013
 		 */
-		public static <T extends ERXCopyable<T>> void shallowCopyToManyRelationship(T source, T destination, EORelationship relationship) {
+		public static <T extends ERXEnterpriseObject> void shallowCopyToManyRelationship(T source, T destination, EORelationship relationship) {
 			String relationshipName = relationship.name();
 			@SuppressWarnings("unchecked")
-			NSArray<ERXCopyable> sourceRelatedEOs = (NSArray<ERXCopyable>) source.valueForKey(relationshipName);
+			NSArray<ERXEnterpriseObject> sourceRelatedEOs = (NSArray<ERXEnterpriseObject>) source.valueForKey(relationshipName);
 			ERXCopyable.copyLogger.debug("Copying " + sourceRelatedEOs.count() + " for relationship " + relationshipName);
-			for (ERXCopyable sourceRelatedEO : sourceRelatedEOs) {
+			for (ERXEnterpriseObject sourceRelatedEO : sourceRelatedEOs) {
 				ERXCopyable.copyLogger.debug("Copying " + sourceRelatedEO.userPresentableDescription() + " for relationship " + relationshipName);
-				ERXCopyable destinationRelatedEO = Utility.shallowCopy(sourceRelatedEO);
+				ERXEnterpriseObject destinationRelatedEO = Utility.shallowCopy(sourceRelatedEO);
 				destination.addObjectToBothSidesOfRelationshipWithKey(destinationRelatedEO, relationshipName);
 			}
 		}
@@ -1139,8 +1139,6 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 * 
 		 * @param <T>
 		 *            the Type of the {@code source} and {@code destination}
-		 * @param <E>
-		 *            the Type of the objects for the {@code relationship}
 		 * @param source
 		 *            the subclass of {@code ERXCopyable} to copy the
 		 *            relationship's value from
@@ -1151,7 +1149,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		 *            the {@link EORelationship} to copy from the {@code source}
 		 *            to the {@code destination}
 		 */
-		public static <T extends ERXCopyable<T>> void shallowCopyToOneRelationship(T source, T destination, EORelationship relationship) {
+		public static <T extends ERXEnterpriseObject> void shallowCopyToOneRelationship(T source, T destination, EORelationship relationship) {
 			String relationshipName = relationship.name();
 			ERXCopyable sourceRelatedEO = (ERXCopyable) source.valueForKey(relationshipName);
 			if (sourceRelatedEO != null) {
@@ -1162,25 +1160,20 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		}
 
 		/**
-		 * <p>
 		 * Creates a new instance of the {@code source}'s Entity, then steps
 		 * through all attributes and relationships, copying them as defined in
 		 * each property's UserInfo dictionary in the EOModel.
-		 * </p>
-		 * 
 		 * <p>
 		 * To make use of this method of copying an EO, simply override the
 		 * {@link ERXCopyable#duplicate(NSMutableDictionary)
 		 * duplicate(NSMutableDictionary)} method in your EO with the following:
 		 * 
-		 * <pre>
+		 * <pre><code>
 		 * public MyEO duplicate(NSMutableDictionary&lt;EOGlobalID, ERXCopyable&lt;?&gt;&gt; copiedObjects) {
 		 * 	MyEO duplicate = ERXCopyable.Utility.modelCopy(copiedObjects, (MyEO) this);
 		 * 	return duplicate;
 		 * }
-		 * </pre>
-		 * 
-		 * </p>
+		 * </code></pre>
 		 * 
 		 * @param <T>
 		 *            the Type of the {@code source} and returned objects
@@ -1346,6 +1339,9 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 			case NULLIFY:
 				destination.takeStoredValueForKey(null, attributeName);
 				break;
+			case SKIP:
+				// nothig to do
+				break;
 			default:
 				handleMissingOrInvalidCopyType(attribute, copyType);
 			}
@@ -1463,7 +1459,7 @@ public interface ERXCopyable<T extends ERXCopyable<T>> extends ERXEnterpriseObje
 		public static NSArray<EOAttribute> primaryAndForeignKeyAttributes(ERXEnterpriseObject source) {
 			EOEntity entity = Utility.entity(source);
 			NSArray<EOAttribute> primaryKeyAttributes = entity.primaryKeyAttributes();
-			NSMutableSet<EOAttribute> keyAttributes = new NSMutableSet<EOAttribute>(primaryKeyAttributes);
+			NSMutableSet<EOAttribute> keyAttributes = new NSMutableSet<>(primaryKeyAttributes);
 			NSArray<EORelationship> classRelationships = Utility.classRelationships(entity);
 			for (EORelationship relationship : classRelationships) {
 				NSArray<EOAttribute> foreignKeyAttributes = relationship.sourceAttributes();

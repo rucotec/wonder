@@ -37,7 +37,7 @@
         {
             adaptorValueConversionMethodName = toCryptoString; 
             columnName = cryptoString; 
-            externalType = VARCHAR; 
+            externalType = varchar; 
             factoryMethodArgumentType = EOFactoryMethodArgumentIsNSString; 
             name = cryptoString; 
             valueClassName = "er.extensions.crypting.ERXCryptoString"; 
@@ -128,7 +128,7 @@
         }, 
         {
             columnName = ""; 
-            externalType = VARCHAR; 
+            externalType = varchar; 
             name = ipAddress; 
             valueClassName = NSString; 
             valueType = S; 
@@ -137,12 +137,60 @@
         {
             adaptorValueConversionMethodName = name; 
             columnName = ""; 
-            externalType = VARCHAR; 
+            externalType = varchar; 
             factoryMethodArgumentType = EOFactoryMethodArgumentIsNSString; 
             name = javaEnum; 
             valueClassName = "java.lang.Enum"; 
             valueFactoryMethodName = valueOf; 
             width = 50; 
+        }, 
+        {
+            adaptorValueConversionClassName = "er.prototypes.ValueConversion"; 
+            adaptorValueConversionMethodName = dateTime; 
+            columnName = ""; 
+            externalType = datetime; 
+            factoryMethodArgumentType = EOFactoryMethodArgumentIsDate; 
+            name = javaDateTime; 
+            valueClassName = "java.time.OffsetDateTime"; 
+            valueFactoryClassName = "er.prototypes.ValueFactory"; 
+            valueFactoryMethodName = dateTime; 
+            valueType = T; 
+        }, 
+        {
+            adaptorValueConversionClassName = "er.prototypes.ValueConversion"; 
+            adaptorValueConversionMethodName = localDate; 
+            columnName = ""; 
+            externalType = date; 
+            factoryMethodArgumentType = EOFactoryMethodArgumentIsDate; 
+            name = javaLocalDate; 
+            valueClassName = "java.time.LocalDate"; 
+            valueFactoryClassName = "er.prototypes.ValueFactory"; 
+            valueFactoryMethodName = localDate; 
+            valueType = D; 
+        }, 
+        {
+            adaptorValueConversionClassName = "er.prototypes.ValueConversion"; 
+            adaptorValueConversionMethodName = localDateTime; 
+            columnName = ""; 
+            externalType = datetime; 
+            factoryMethodArgumentType = EOFactoryMethodArgumentIsDate; 
+            name = javaLocalDateTime; 
+            valueClassName = "java.time.LocalDateTime"; 
+            valueFactoryClassName = "er.prototypes.ValueFactory"; 
+            valueFactoryMethodName = localDateTime; 
+            valueType = T; 
+        }, 
+        {
+            adaptorValueConversionClassName = "er.prototypes.ValueConversion"; 
+            adaptorValueConversionMethodName = localTime; 
+            columnName = ""; 
+            externalType = time; 
+            factoryMethodArgumentType = EOFactoryMethodArgumentIsDate; 
+            name = javaLocalTime; 
+            valueClassName = "java.time.LocalTime"; 
+            valueFactoryClassName = "er.prototypes.ValueFactory"; 
+            valueFactoryMethodName = localTime; 
+            valueType = t; 
         }, 
         {
             adaptorValueConversionClassName = "er.prototypes.ValueConversion"; 
@@ -408,6 +456,10 @@
         intNumber, 
         ipAddress, 
         javaEnum, 
+        javaDateTime, 
+        javaLocalDate, 
+        javaLocalDateTime, 
+        javaLocalTime, 
         jodaDateTime, 
         jodaLocalDate, 
         jodaLocalDateTime, 
@@ -445,6 +497,10 @@
             id, 
             intBoolean, 
             intNumber, 
+            javaDateTime, 
+            javaLocalDate, 
+            javaLocalDateTime, 
+            javaLocalTime, 
             jodaLocalDate, 
             jodaLocalDateTime, 
             jodaLocalTime, 

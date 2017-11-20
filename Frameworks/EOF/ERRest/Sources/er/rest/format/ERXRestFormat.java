@@ -29,7 +29,7 @@ public class ERXRestFormat {
 	public static final String BINARY_PLIST_KEY = "bplist";
 	public static final String EMBER_KEY = "ember";
 
-	private static Map<String, ERXRestFormat> _formats = new ConcurrentHashMap<String, ERXRestFormat>();
+	private static Map<String, ERXRestFormat> _formats = new ConcurrentHashMap<>();
 	
 	static {
 		// MS: The whole naming thing is stupid, I know ... we need to separate mime type from extensions from the name 
@@ -48,28 +48,7 @@ public class ERXRestFormat {
 	private final String _name;
 	private final IERXRestParser _parser;
 	private final IERXRestWriter _writer;
-	private final ERXRestFormat.Delegate _delegate;
-
-	// These are going to be killed soon ...
-	@Deprecated
-	public static final ERXRestFormat JSON = json();
-	@Deprecated
-	public static final ERXRestFormat JS = ERXRestFormat.formatNamed(ERXRestFormat.JS_KEY);
-	@Deprecated
-	public static final ERXRestFormat PLIST = plist();
-	@Deprecated
-	public static final ERXRestFormat RAILS = ERXRestFormat.formatNamed(ERXRestFormat.RAILS_KEY);
-	@Deprecated
-	public static final ERXRestFormat XML = xml();
-	@Deprecated
-	public static final ERXRestFormat HTML = html();
-	@Deprecated
-	public static final ERXRestFormat GIANDUIA_JSON = ERXRestFormat.formatNamed("gndj");
-	@Deprecated
-	public static final ERXRestFormat GIANDUIA_PERSISTENT_STORE = ERXRestFormat.formatNamed("gndp");
-	@Deprecated
-	public static final ERXRestFormat SPROUTCORE = ERXRestFormat.formatNamed(ERXRestFormat.SPROUTCORE_KEY);
-	
+	private final ERXRestFormat.Delegate _delegate;	
 	    
 	/**
 	 * Returns the registered html form format.
@@ -183,6 +162,7 @@ public class ERXRestFormat {
 	 * Returns a parsed ERXRestRequestNode using this format's parser.
 	 * 
 	 * @param str the string to parse
+	 * @param context the REST context
 	 * @return the parsed request node
 	 */
 	public ERXRestRequestNode parse(String str, ERXRestContext context) {
@@ -193,6 +173,7 @@ public class ERXRestFormat {
 	 * Returns a parsed ERXRestRequestNode using this format's parser.
 	 * 
 	 * @param request the request
+	 * @param context the REST context
 	 * @return the parsed request node
 	*/
 	public ERXRestRequestNode parse(IERXRestRequest request, ERXRestContext context) {
@@ -214,6 +195,7 @@ public class ERXRestFormat {
 	 * Returns the formatted version of the given object using a recursive "All" filter.
 	 * 
 	 * @param obj the object to render
+	 * @param filter the filter to apply to the object
 	 * @return obj rendered using this format
 	 */
 	public String toString(Object obj, ERXKeyFilter filter) {
@@ -225,6 +207,7 @@ public class ERXRestFormat {
 	 * Returns the formatted version of the given object using a recursive "All" filter.
 	 * 
 	 * @param obj the object to render
+	 * @param context the REST context
 	 * @return obj rendered using this format
 	 */
 	public String toString(Object obj, ERXRestContext context) {
@@ -236,7 +219,7 @@ public class ERXRestFormat {
 	 * 
 	 * @param obj the object to render
 	 * @param filter the filter to apply to the object
-	 * @param context the rest delegate to use
+	 * @param context the REST context
 	 * @return obj rendered using this format
 	 */
 	public String toString(Object obj, ERXKeyFilter filter, ERXRestContext context) {
@@ -249,7 +232,7 @@ public class ERXRestFormat {
 	 * @param classDescription the class description for the elements of the list
 	 * @param list the list
 	 * @param filter the filter
-	 * @param context the rest delegate to use
+	 * @param context the REST context
 	 * @return list rendered using this format
 	 */
 	public String toString(EOClassDescription classDescription, List<?> list, ERXKeyFilter filter, ERXRestContext context) {
