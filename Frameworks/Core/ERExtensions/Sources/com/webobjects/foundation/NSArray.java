@@ -167,6 +167,7 @@ public class NSArray<E> implements Cloneable, Serializable, NSCoding, NSKeyValue
 	public static final NSArray EmptyArray = new NSArray<Object>();
 	private static final char _OperatorIndicatorChar = '@';
 	public static final String CountOperatorName = "count";
+	public static final String IsEmptyOperatorName = "isEmpty";
 	public static final String MaximumOperatorName = "max";
 	public static final String MinimumOperatorName = "min";
 	public static final String SumOperatorName = "sum";
@@ -755,6 +756,9 @@ public class NSArray<E> implements Cloneable, Serializable, NSCoding, NSKeyValue
 			}
 			if (key.equals(CountOperatorName)) {
 				return _NSUtilities.IntegerForInt(count());
+			}
+			if (key.equals(IsEmptyOperatorName)) {
+				return new Boolean (count() == 0 ? true : false);
 			}
 		}
 		Object[] objects = objectsNoCopy();
